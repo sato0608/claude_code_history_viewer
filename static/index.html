@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Code 作業履歴</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#2a78d6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="CC作業履歴">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Claude Code 作業履歴</div>
+    <nav class="tabs" id="tabs">
+      <button data-view="dashboard" class="active">ダッシュボード</button>
+      <button data-view="sessions">セッション</button>
+      <button data-view="tasks">タスク</button>
+      <button data-view="issues">課題</button>
+      <button data-view="changes">変更履歴</button>
+      <button data-view="report">レポート</button>
+    </nav>
+    <div class="top-right">
+      <label class="muted" title="自動判定・設定で隠している極短セッションを表示する"><input type="checkbox" id="showMemory"> 隠した極短を表示<span id="memoryCount"></span></label>
+      <button class="btn" data-hidesettings title="極短セッションを隠すプロジェクトの設定">隠す設定</button>
+      <select id="project" aria-label="プロジェクトで絞り込む"></select>
+      <input id="search" type="search" placeholder="検索(タイトル・発言・プロジェクト)">
+      <button id="notify" class="notify" title="セッションが入力待ち・エラーになったら通知する">🔔 オフ</button>
+      <span id="sync" class="sync hidden"></span>
+      <span id="live" class="live off" title="リアルタイム更新の接続状態"><i></i><span>未接続</span></span>
+      <a id="logout" class="logout hidden" href="/logout">ログアウト</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main id="main"></main>
+    <aside id="detail" class="detail hidden"></aside>
+  </div>
+
+  <div id="tooltip" class="tooltip hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

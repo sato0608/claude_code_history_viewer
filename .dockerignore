@@ -1,0 +1,7 @@
+tests
+setup_autostart.py
+autostart.py
+sync_client.py
+sync_lock.py
+__pycache__
+*.json
