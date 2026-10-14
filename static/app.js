@@ -55,6 +55,7 @@ const state = {
   notify: false,
   search: "",
   weekStart: startOfWeek(new Date()),
+  mobileDay: null,
   hourPx: 60,
   mergeShort: true,
   showMemory: false,
@@ -522,7 +523,7 @@ function monthHtml(list) {
     <button class="btn" data-month="-1" aria-label="前の月">◀</button>
     <button class="btn" data-month="1" aria-label="次の月">▶</button>
     <strong class="num">${first.getFullYear()}年${first.getMonth() + 1}月</strong>
-    <span class="muted">日をクリック = その日の一覧 / プロジェクト行をクリック = そのプロジェクトだけ / ダブルクリック = その週の時間帯表示</span>
+    <span class="muted note-long">日をクリック = その日の一覧 / プロジェクト行をクリック = そのプロジェクトだけ / ダブルクリック = その週の時間帯表示</span>
   </div>${monthChart(days, colorMap, nameOf, ranked)}<div class="month">`;
   for (const w of ["月", "火", "水", "木", "金", "土", "日"]) html += `<div class="month-head">${w}</div>`;
   for (const day of days) {
@@ -599,6 +600,15 @@ function sessionTable(list) {
     }).join("")}</tbody></table>`;
 }
 
+// 狭い画面(スマホ)では、週カレンダーを 1 日だけ表示する
+const MOBILE_MQ = window.matchMedia("(max-width: 700px)");
+function isMobile() { return MOBILE_MQ.matches; }
+function mobileDayIndex(ws) {
+  const diff = Math.round((new Date().setHours(0, 0, 0, 0) - ws.getTime()) / 86400000);
+  const todayIn = diff >= 0 && diff < 7 ? diff : 0;
+  const v = state.mobileDay;
+  return v === null || v === undefined || v < 0 || v > 6 ? todayIn : v;
+}
 function calendarHtml(list) {
   const ws = state.weekStart;
   const we = addDays(ws, 7);
@@ -608,6 +618,9 @@ function calendarHtml(list) {
   const H = hp * 24;
   const todayKey = new Date().toDateString();
 
+  const mobile = isMobile();
+  const di = mobile ? mobileDayIndex(ws) : -1;
+  const dayIdxs = mobile ? [di] : [0, 1, 2, 3, 4, 5, 6];
   let html = `<div class="toolbar">
     <button class="btn" data-week="today">今週</button>
     <button class="btn" data-week="-1" aria-label="前の週">◀</button>
@@ -619,17 +632,24 @@ function calendarHtml(list) {
     ${state.mergeShort ? `<label class="muted">極短の基準 <select id="shortSegMin">${[1,2,5,10].map((m) => `<option value="${m}" ${m === state.shortSegMin ? "selected" : ""}>${m}分</option>`).join("")}</select>未満</label>
     <label class="muted">間隔 <select id="mergeGapMin">${[1,3,5,10].map((m) => `<option value="${m}" ${m === state.mergeGapMin ? "selected" : ""}>${m}分</option>`).join("")}</select>以内</label>` : ""}
     <button class="btn" data-zoom="-1" aria-label="縮小">−</button><button class="btn" data-zoom="1" aria-label="拡大">＋</button>
-    <span class="muted">帯 = 作業区間(記録の間隔が10分を超えたら分割、短い作業も読める高さで表示)・斜線 = 作業中</span>
-  </div>${legendHtml(inWeek)}`;
+    <span class="muted note-long">帯 = 作業区間(記録の間隔が10分を超えたら分割、短い作業も読める高さで表示)・斜線 = 作業中</span>
+  </div>`;
+  if (mobile) {
+    html += `<div class="daystrip" role="tablist">${[0, 1, 2, 3, 4, 5, 6].map((i) => {
+      const d = addDays(ws, i);
+      return `<button data-mday="${i}" class="${i === di ? "active" : ""} ${d.toDateString() === todayKey ? "today" : ""}"><span>${WEEKDAYS[d.getDay()]}</span><b>${d.getDate()}</b></button>`;
+    }).join("")}</div>`;
+  }
+  html += legendHtml(inWeek);
 
-  html += `<div class="cal"><div class="cal-head"></div>`;
-  for (let i = 0; i < 7; i++) {
+  html += `<div class="cal ${mobile ? "single" : ""}"><div class="cal-head"></div>`;
+  for (const i of dayIdxs) {
     const d = addDays(ws, i);
     html += `<div class="cal-head ${d.toDateString() === todayKey ? "today" : ""}">${WEEKDAYS[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}</div>`;
   }
   html += `<div class="cal-hours" style="height:${H}px">${Array.from({ length: 23 }, (_, h) => `<div style="top:${(h + 1) * hp}px">${h + 1}:00</div>`).join("")}</div>`;
 
-  for (let i = 0; i < 7; i++) {
+  for (const i of dayIdxs) {
     const d = addDays(ws, i);
     const d0 = d.getTime() / 1000, d1 = addDays(d, 1).getTime() / 1000;
     const isToday = d.toDateString() === todayKey;
@@ -1016,6 +1036,7 @@ function renderGroupList(box) {
 
 function goToWeek(ts) {
   state.weekStart = startOfWeek(new Date(ts * 1000));
+  state.mobileDay = Math.round((new Date(ts * 1000).setHours(0, 0, 0, 0) - state.weekStart.getTime()) / 86400000);
   state.sessionMode = "calendar";
   state.groupIds = null; state.selected = null; state.panel = null;
   savePrefs(); render();
@@ -1216,7 +1237,9 @@ document.addEventListener("click", (e) => {
   }
   if (d.rcopy !== undefined) { copyReport(); return; }
   if (d.rsave !== undefined) { saveReport(); return; }
+  if (d.mday !== undefined) { state.mobileDay = Number(d.mday); render({ keepScroll: true }); return; }
   if (d.week) {
+    state.mobileDay = null;
     state.weekStart = d.week === "today" ? startOfWeek(new Date()) : addDays(state.weekStart, 7 * Number(d.week));
     render(); return;
   }

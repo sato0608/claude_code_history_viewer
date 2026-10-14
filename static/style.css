@@ -282,3 +282,45 @@ ul.plain li:last-child { border-bottom: 0; }
 .mchart { width: 100%; height: 110px; display: block; }
 .mchart .axis { font-size: 9px; fill: var(--muted); }
 .mchart rect:hover { opacity: .75; }
+
+/* ---- スマホ(幅 700px 以下) ---- */
+.daystrip { display: none; }
+@media (max-width: 700px) {
+  body { font-size: 14px; }
+  .topbar { padding: 6px 10px; gap: 8px; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; }
+  .tabs button { white-space: nowrap; padding: 6px 12px; }
+  .top-right { width: 100%; }
+  #search { flex: 1; width: auto; min-width: 0; max-width: none; }
+  #project { max-width: 45vw; }
+  .top-right label.muted, [data-hidesettings] { display: none; }
+  main { padding: 8px 10px 24px; }
+  .btn, .seg button { padding: 6px 12px; }
+  .note-long { display: none; }
+  .toolbar { gap: 6px; }
+  .toolbar label.muted { display: none; }
+
+  /* 時間帯(週): 1 日だけ表示し、上の曜日バーで切り替える */
+  .daystrip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }
+  .daystrip button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 4px 0; display: flex; flex-direction: column; align-items: center; line-height: 1.25; color: var(--ink-2); }
+  .daystrip button b { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .daystrip button.today { color: var(--accent); }
+  .daystrip button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cal.single { grid-template-columns: 40px 1fr; }
+  .band { font-size: 12px; }
+
+  /* 月カレンダー: 7 列を画面幅に収め、件数だけ表示する */
+  .month { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .month-cell { min-height: 56px; padding: 3px 2px; }
+  .mc-top { flex-direction: column; align-items: center; gap: 0; }
+  .mc-total { font-size: 10px; text-align: center; line-height: 1.2; }
+  .mc-row .clamp, .mc-row .n, .mc-more { display: none; }
+  .mc-row { display: inline-flex; margin-right: 2px; line-height: 1; }
+  .mc-row .swatch { width: 8px; height: 8px; }
+  .month-head { padding: 4px 0; }
+
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .cards { grid-template-columns: 1fr; }
+  .hbar { grid-template-columns: minmax(60px, 110px) 1fr minmax(48px, max-content); }
+  table.list { font-size: 13px; }
+}
