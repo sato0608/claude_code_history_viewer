@@ -900,49 +900,98 @@ function reportMarkdown(r) {
     }
     L.push("");
   }
-  if (!state.project) {
-    const byProj = new Map();
-    for (const x of r.rows) {
-      const e = byProj.get(x.s.project) || { name: x.s.projectName, sec: 0, n: 0 };
-      e.sec += x.sec; e.n++;
-      byProj.set(x.s.project, e);
+  // プロジェクトごとに「行ったこと / できるようになったこと / 直したこと / できていないこと」へ整理する。
+  // 分類は履歴にある事実(コミットメッセージの接頭辞・タスクの状態・課題の記録)だけを根拠にする。
+  const groups = new Map();
+  for (const x of r.rows) {
+    const g = groups.get(x.s.project) || { name: x.s.projectName, project: x.s.project, sec: 0, rows: [] };
+    g.sec += x.sec; g.rows.push(x);
+    groups.set(x.s.project, g);
+  }
+  const uniq = (arr) => [...new Set(arr)];
+  const withStamp = (ts) => (week ? `${fmtMD(new Date(ts * 1000))} ` : "");
+  const OPEN_LABEL = { running: "作業中", waiting: "入力待ち", interrupted: "中断", error: "エラー" };
+  for (const g of [...groups.values()].sort((a, b) => b.sec - a.sec)) {
+    L.push(`## ${g.name}(作業 ${fmtDur(g.sec)}・${g.rows.length}セッション)`, "");
+    const commitsAll = g.rows.flatMap((x) => x.commits).sort((a, b) => a.ts - b.ts);
+    const feat = [], fix = [], other = [];
+    for (const c of commitsAll) {
+      const msg = String(c.message || "(メッセージなし)");
+      const hash = c.hash ? `\`${c.hash}\` ` : "";
+      const clean = oneLine(msg.replace(/^(feat|fix|docs|chore|refactor|test|style|perf|build|ci)(\([^)]*\))?!?:\s*/i, ""), 100);
+      if (!c.message) continue;
+      // 先に「直した」を判定する(「起動失敗を修正」は追加ではない)
+      if (/^(fix|bug|hotfix)/i.test(msg) || /(修正|不具合|バグ|直し|改善)/.test(msg)) fix.push(`${hash}${clean}`);
+      else if (/^(feat|add)/i.test(msg) || /(追加|実装|新規|新機能|対応|可能に|できるよう|切り替え|連動)/.test(msg)) feat.push(`${hash}${clean}`);
+      else other.push(`${hash}${clean}`);
     }
-    if (byProj.size > 1) {
-      L.push("## プロジェクト別の作業時間", "");
-      for (const e of [...byProj.values()].sort((a, b) => b.sec - a.sec)) L.push(`- ${e.name}: ${fmtDur(e.sec)}(${e.n}セッション)`);
+    const doneTasks = uniq(g.rows.flatMap((x) => x.tasks.map((t) => oneLine(t.content, 80))));
+    // 貼り付けの断片・IDE/ブラウザの自動挿入・引き継ぎ文はレポートに載せない
+    const noisy = (t) => /^\s*</.test(t) || /This session is being continued|^\s*\/compact|^\s*Caveat:/.test(t);
+    const clean1 = (t) => oneLine(String(t || "").replace(/<pasted_content[^>]*>/g, "").replace(/<[a-z_]+>[\s\S]*?<\/[a-z_]+>/g, ""), 90);
+    const prompts = state.reportPrompts
+      ? uniq(g.rows.flatMap((x) => x.prompts.filter((p) => !noisy(p.text || "")).map((p) => clean1(p.text)))).filter((t) => t.length >= 4)
+      : [];
+    const did = [
+      ...doneTasks.map((t) => `${t}(タスク完了)`),
+      ...other.map((c) => `${c}(コミット)`),
+    ];
+    L.push("### 行ったこと");
+    if (did.length) for (const t of did.slice(0, 12)) L.push(`- ${t}`);
+    if (did.length > 12) L.push(`- ほか ${did.length - 12}件`);
+    if (prompts.length) {
+      L.push(`- 依頼${prompts.length > 6 ? `(${prompts.length}件のうち最初の6件)` : ""}:`);
+      for (const t of prompts.slice(0, 6)) L.push(`  - ${t}`);
+    }
+    if (!did.length && !prompts.length) {
+      for (const x of g.rows) L.push(`- ${withStamp(x.from)}${fmtTime(x.from)} ${oneLine(x.s.title, 80)}(作業 ${fmtDur(x.sec)})`);
+    }
+    L.push("");
+    if (feat.length) { L.push("### できるようになったこと"); for (const t of feat) L.push(`- ${t}`); L.push(""); }
+    if (fix.length) { L.push("### 直したこと"); for (const t of fix) L.push(`- ${t}`); L.push(""); }
+
+    // できていないこと: 完了していないタスク・中断/入力待ちのままのセッション・記録された課題
+    const open = [];
+    const seenTask = new Set();
+    for (const x of g.rows) {
+      for (const t of x.s.tasks || []) {
+        if (t.status === "completed") continue;
+        const text = oneLine(t.content, 80);
+        if (seenTask.has(text)) continue;
+        seenTask.add(text);
+        open.push(`${text}(${t.status === "in_progress" ? "進行中" : "未着手"})`);
+      }
+    }
+    for (const x of g.rows) {
+      const lab = OPEN_LABEL[x.s.status];
+      if (lab && x.s.status !== "running") open.push(`セッション「${oneLine(x.s.title, 50)}」が${lab}のまま`);
+    }
+    const issues = g.rows.flatMap((x) => x.issues);
+    if (issues.length) {
+      const c = {};
+      for (const it of issues) c[it.kind] = (c[it.kind] || 0) + 1;
+      open.push(`記録された課題 ${issues.length}件(${Object.entries(c).map(([k, v]) => `${ISSUE_KIND[k] || k} ${v}`).join("、")})`);
+    }
+    L.push("### できていないこと");
+    if (open.length) for (const t of open.slice(0, 12)) L.push(`- ${t}`);
+    else L.push("- 記録された未完了・課題はありません");
+    if (open.length > 12) L.push(`- ほか ${open.length - 12}件`);
+    L.push("");
+
+    if (state.reportFiles) {
+      const fm = new Map();
+      for (const x of g.rows) for (const f of x.files) fm.set(relPath(f.path, x.s.project), (fm.get(relPath(f.path, x.s.project)) || 0) + f.n);
+      if (fm.size) {
+        const top = [...fm.entries()].sort((a, b) => b[1] - a[1]);
+        L.push("### 編集したファイル");
+        L.push(`- ${top.slice(0, 10).map(([f, n]) => `${f}(${n}回)`).join("、")}${top.length > 10 ? ` ほか${top.length - 10}件` : ""}`, "");
+      }
+    }
+    if (did.length || prompts.length) {
+      L.push("### セッション");
+      for (const x of g.rows) L.push(`- ${withStamp(x.from)}${fmtTime(x.from)}〜${fmtTime(x.to)} ${oneLine(x.s.title, 70)}(作業 ${fmtDur(x.sec)})`);
       L.push("");
     }
-  }
-
-  L.push("## セッション", "");
-  r.rows.forEach((x, i) => {
-    const s = x.s;
-    L.push(`### ${i + 1}. ${oneLine(s.title, 80)}`, "");
-    const when = week ? `${fmtMD(new Date(x.from * 1000))} ${fmtTime(x.from)}〜${fmtTime(x.to)}` : `${fmtTime(x.from)}〜${fmtTime(x.to)}`;
-    L.push(`- 時間: ${when}(作業 ${fmtDur(x.sec)})`);
-    L.push(`- プロジェクト: ${s.projectName}${s.branch ? ` / ブランチ: ${s.branch}` : ""}`);
-    if (state.reportPrompts && x.prompts.length) {
-      L.push(`- 依頼(${x.prompts.length}件${x.prompts.length > 5 ? "、最初の5件" : ""}):`);
-      for (const p of x.prompts.slice(0, 5)) L.push(`  - ${oneLine(p.text)}`);
-    }
-    if (x.tasks.length) L.push(`- 完了したタスク: ${x.tasks.map((t) => oneLine(t.content, 60)).join("、")}`);
-    for (const c of x.commits) L.push(`- コミット: ${c.hash ? `\`${c.hash}\`` : "(ハッシュ不明)"} ${oneLine(c.message || "(メッセージなし)", 100)}`);
-    if (state.reportFiles && x.files.length) {
-      const shown = x.files.slice(0, 15).map((f) => `${relPath(f.path, s.project)}(${f.n}回)`);
-      L.push(`- 編集したファイル: ${shown.join("、")}${x.files.length > 15 ? ` ほか${x.files.length - 15}件` : ""}`);
-    }
-    if (x.issues.length) {
-      const c = {};
-      for (const it of x.issues) c[it.kind] = (c[it.kind] || 0) + 1;
-      L.push(`- 課題: ${x.issues.length}件(${Object.entries(c).map(([k, v]) => `${ISSUE_KIND[k] || k} ${v}`).join("、")})`);
-    }
-    L.push("");
-  });
-
-  if (commits.length) {
-    L.push("## コミット一覧", "");
-    for (const c of commits.sort((a, b) => a.ts - b.ts)) L.push(`- ${week ? fmtMD(new Date(c.ts * 1000)) + " " : ""}${fmtTime(c.ts)} ${c.hash ? `\`${c.hash}\`` : "(ハッシュ不明)"} ${oneLine(c.message || "(メッセージなし)", 100)}`);
-    L.push("");
   }
   return L.join("\n").replace(/\n+$/, "\n");
 }
@@ -993,7 +1042,8 @@ function renderReport() {
     </div>
     <div class="card report">${mdToHtml(md)}</div>
     <div class="note">上部のプロジェクト選択と検索欄の条件で絞り込まれます。作業時間は、記録の間隔が10分以内を連続した作業とみなした合計です。
-      完了したタスクは「期間内に最後に更新され、完了になっているもの」です。</div>`;
+      完了したタスクは「期間内に最後に更新され、完了になっているもの」です。
+      分類はコミットメッセージの接頭辞(feat・add・追加 → できるようになったこと / fix・修正 → 直したこと / その他 → 行ったこと)と、タスクの状態・課題の記録から機械的に行っています。</div>`;
 }
 async function copyReport() {
   const text = state.reportText || "";
